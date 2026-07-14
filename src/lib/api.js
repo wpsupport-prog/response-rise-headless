@@ -189,12 +189,20 @@ export async function getPageAssetsAndHtml(slug) {
     `;
     inlineStyles.unshift(coreVariableFallbackKit);
 
+    // 9. NEW: Extract the first major content image to use as our LCP target
+    let lcpImageUrl = '';
+    const firstImgMatch = bodyHtml.match(/<img[^>]+src=['"]([^'"]+)['"]/);
+    if (firstImgMatch && firstImgMatch[1]) {
+      lcpImageUrl = firstImgMatch[1];
+    }
+
     return {
       html: bodyHtml,
       stylesheets: localStylesheets,
       inlineStyles,
       externalScripts,
-      inlineScripts
+      inlineScripts,
+      lcpImageUrl // <-- Send this to Next.js page template
     };
   } catch (error) {
     console.error("❌ Link rewrite parsing engine exception:", error);

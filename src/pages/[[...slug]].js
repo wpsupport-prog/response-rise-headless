@@ -28,7 +28,6 @@ export default function HeadlessDynamicRender({ pageData }) {
     };
   }, [pageData]);
 
-  // CRITICAL SCRIPT FIX: Use a React Ref to make sure Elementor's init() ONLY fires once
   useEffect(() => {
     if (domReady && window.elementorFrontend && typeof window.elementorFrontend.init === 'function') {
       if (!initializedRef.current) {
@@ -51,7 +50,8 @@ export default function HeadlessDynamicRender({ pageData }) {
     );
   }
 
-  const { html, stylesheets, inlineStyles, externalScripts, inlineScripts } = pageData;
+  // Destructure lcpImageUrl from the newly updated api query payload
+  const { html, stylesheets, inlineStyles, externalScripts, inlineScripts, lcpImageUrl } = pageData;
 
   return (
     <Layout>
@@ -62,6 +62,16 @@ export default function HeadlessDynamicRender({ pageData }) {
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Manrope:wght@400;600;700;800&display=swap" 
           rel="stylesheet" 
         />
+
+        {/* PERFORMANCE OPTIMIZATION: High-priority link preloader for the main viewport hero element */}
+        {lcpImageUrl && (
+          <link 
+            rel="preload" 
+            fetchpriority="high" 
+            as="image" 
+            href={lcpImageUrl} 
+          />
+        )}
 
         {/* Load FontAwesome asset package vector rules directly to render header dropdown carets */}
         <link 
@@ -82,7 +92,7 @@ export default function HeadlessDynamicRender({ pageData }) {
           />
         ))}
 
-       {/* HEADER MENU CONSTRAINT & ALIGNMENT SHIELD */}
+        {/* HEADER MENU CONSTRAINT, ALIGNMENT, & PERFORMANCE SHIELDS */}
         <style dangerouslySetInnerHTML={{ __html: `
           .elementor-rendered-html-wrapper img {
             max-width: 100% !important;
@@ -92,6 +102,13 @@ export default function HeadlessDynamicRender({ pageData }) {
           }
           .elementor-widget-image {
             display: flex !important;
+          }
+
+          /* FORCE LCP Image asset column to render instantly without visual layout delays */
+          .elementor-top-section:first-of-type img {
+            content-visibility: auto !important;
+            opacity: 1 !important;
+            visibility: visible !important;
           }
           
           /* Main Horizontal Menu Alignment Layout rules */
@@ -198,7 +215,7 @@ export default function HeadlessDynamicRender({ pageData }) {
             background-image: none !important;
           }
 
-          /* ABSOLUTE WHITE SPECIFIC ROUTE SHIELD */
+          /* ABSOLUTE WHITE SPECIFIC ROUTE SHIELD (For meeting schedule layout) */
           .elementor-rendered-html-wrapper [class*="elementor-1035"],
           .elementor-rendered-html-wrapper [class*="elementor-1035"] *,
           .elementor-rendered-html-wrapper footer[data-elementor-id="1035"],
@@ -209,7 +226,7 @@ export default function HeadlessDynamicRender({ pageData }) {
             box-shadow: none !important;
           }
           
-          /* Hide all text inside this specific footer */
+          /* Hide all text inside this specific white footer */
           .elementor-rendered-html-wrapper [class*="elementor-1035"] h1,
           .elementor-rendered-html-wrapper [class*="elementor-1035"] h2,
           .elementor-rendered-html-wrapper [class*="elementor-1035"] h3,
@@ -223,12 +240,6 @@ export default function HeadlessDynamicRender({ pageData }) {
             visibility: hidden !important;
             opacity: 0 !important;
           }
-		  
-		  /* OPTIMIZATION: Force the primary hero column image to override lazy rendering states */
-			.elementor-top-section:first-of-type img {
-			  loading: eager !important;
-			  decoding: sync !important;
-			}
         `}} />
 
         {/* Inject Elementor configuration script blocks before engine libraries load */}
@@ -253,23 +264,23 @@ export default function HeadlessDynamicRender({ pageData }) {
       />
 
       {/* Mount remaining external production engine scripts with optimized load strategies */}
-		{externalScripts.map((url, idx) => {
-		  if (url.includes('jquery.min.js') || url.includes('waypoints.min.js')) return null;
-		  
-		  // CRITICAL CAPTURE: If it's elementor frontend, let it load normally
-		  if (url.includes('elementor-frontend') || url.includes('core')) {
-			return <Script key={`wp-ext-js-${idx}`} src={url} strategy="afterInteractive" />;
-		  }
-		  
-		  // OPTIMIZATION: Force secondary utilities to wait until the page is fully idle
-		  return (
-			<Script 
-			  key={`wp-ext-js-${idx}`} 
-			  src={url} 
-			  strategy="lazyOnload" 
-			/>
-		  );
-		})}
+      {externalScripts.map((url, idx) => {
+        if (url.includes('jquery.min.js') || url.includes('waypoints.min.js')) return null;
+        
+        // Critical interface dependencies execute via standard parameters asynchronously
+        if (url.includes('elementor-frontend') || url.includes('core')) {
+          return <Script key={`wp-ext-js-${idx}`} src={url} strategy="afterInteractive" />;
+        }
+        
+        // Non-critical background layers get deferred entirely until the primary window thread goes idle
+        return (
+          <Script 
+            key={`wp-ext-js-${idx}`} 
+            src={url} 
+            strategy="lazyOnload" 
+          />
+        );
+      })}
 
       <div 
         className="elementor-rendered-html-wrapper localized-static-viewport"
