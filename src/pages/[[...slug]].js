@@ -223,6 +223,12 @@ export default function HeadlessDynamicRender({ pageData }) {
             visibility: hidden !important;
             opacity: 0 !important;
           }
+		  
+		  /* OPTIMIZATION: Force the primary hero column image to override lazy rendering states */
+			.elementor-top-section:first-of-type img {
+			  loading: eager !important;
+			  decoding: sync !important;
+			}
         `}} />
 
         {/* Inject Elementor configuration script blocks before engine libraries load */}
@@ -246,17 +252,24 @@ export default function HeadlessDynamicRender({ pageData }) {
         strategy="afterInteractive"
       />
 
-      {/* Mount remaining external production engine scripts */}
-      {externalScripts.map((url, idx) => {
-        if (url.includes('jquery.min.js') || url.includes('waypoints.min.js')) return null;
-        return (
-          <Script 
-            key={`wp-ext-js-${idx}`} 
-            src={url} 
-            strategy="afterInteractive" 
-          />
-        );
-      })}
+      {/* Mount remaining external production engine scripts with optimized load strategies */}
+		{externalScripts.map((url, idx) => {
+		  if (url.includes('jquery.min.js') || url.includes('waypoints.min.js')) return null;
+		  
+		  // CRITICAL CAPTURE: If it's elementor frontend, let it load normally
+		  if (url.includes('elementor-frontend') || url.includes('core')) {
+			return <Script key={`wp-ext-js-${idx}`} src={url} strategy="afterInteractive" />;
+		  }
+		  
+		  // OPTIMIZATION: Force secondary utilities to wait until the page is fully idle
+		  return (
+			<Script 
+			  key={`wp-ext-js-${idx}`} 
+			  src={url} 
+			  strategy="lazyOnload" 
+			/>
+		  );
+		})}
 
       <div 
         className="elementor-rendered-html-wrapper localized-static-viewport"
