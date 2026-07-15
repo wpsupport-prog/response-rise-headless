@@ -1682,52 +1682,49 @@ export default function HeadlessDynamicRender({ pageData }) {
           {domReady && productData && (
             <div className="react-portal-injector">
               <div style={{ display: 'none' }} id="headless-mount-hook">
-                {document.getElementById('headless-react-add-to-cart-anchor') && (
-                  <div className="react-buy-box-container font-sans">
-                    
-                    {addedMessage && (
-                      <div className="woocommerce-message" role="alert" style={{ borderTopColor: '#ff6f00', background: '#f0fdf4', color: '#166534', padding: '12px', marginBottom: '16px', borderRadius: '4px', borderLeft: '4px solid #16a34a', fontWeight: '600', fontSize: '14px' }}>
-                        {addedMessage}
-                      </div>
-                    )}
+                <div className="react-buy-box-container font-sans">
+                  
+                  {addedMessage && (
+                    <div className="woocommerce-message" role="alert" style={{ borderTopColor: '#ff6f00', background: '#f0fdf4', color: '#166534', padding: '12px', marginBottom: '16px', borderRadius: '4px', borderLeft: '4px solid #16a34a', fontWeight: '600', fontSize: '14px' }}>
+                      {addedMessage}
+                    </div>
+                  )}
 
-                    <div className="flex items-center space-x-3 mb-4">
-                      <span className="text-xs font-bold uppercase text-gray-400">Availability:</span>
-                      <span className={`text-xs font-bold uppercase px-2.5 py-0.5 rounded-full ${productData.stock_status === 'instock' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {productData.stock_status === 'instock' ? 'In Stock' : 'Out of Stock'}
-                      </span>
+                  <div className="flex items-center space-x-3 mb-4">
+                    <span className="text-xs font-bold uppercase text-gray-400">Availability:</span>
+                    <span className={`text-xs font-bold uppercase px-2.5 py-0.5 rounded-full ${productData.stock_status === 'instock' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {productData.stock_status === 'instock' ? 'In Stock' : 'Out of Stock'}
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleAddToCart} className="cart flex items-center gap-4">
+                    <div className="quantity-select">
+                      <button 
+                        type="button" 
+                        onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                        className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-r"
+                      >
+                        -
+                      </button>
+                      <span className="px-4 py-1.5 font-bold text-gray-800 text-sm">{quantity}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setQuantity(q => q + 1)}
+                        className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-l"
+                      >
+                        +
+                      </button>
                     </div>
 
-                    <form onSubmit={handleAddToCart} className="cart flex items-center gap-4">
-                      {/* Interactive Quantity block */}
-                      <div className="quantity-select">
-                        <button 
-                          type="button" 
-                          onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                          className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-r"
-                        >
-                          -
-                        </button>
-                        <span className="px-4 py-1.5 font-bold text-gray-800 text-sm">{quantity}</span>
-                        <button 
-                          type="button" 
-                          onClick={() => setQuantity(q => q + 1)}
-                          className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-l"
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={addingToCart || productData.stock_status !== 'instock'}
-                        className="single_add_to_cart_button button alt flex-1 py-2 px-6 flex items-center justify-center text-sm disabled:opacity-50"
-                      >
-                        {addingToCart ? 'Adding unit...' : 'Add to cart'}
-                      </button>
-                    </form>
-                  </div>
-                )}
+                    <button
+                      type="submit"
+                      disabled={addingToCart || productData.stock_status !== 'instock'}
+                      className="single_add_to_cart_button button alt flex-1 py-2 px-6 flex items-center justify-center text-sm disabled:opacity-50"
+                    >
+                      {addingToCart ? 'Adding unit...' : 'Add to cart'}
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
           )}
