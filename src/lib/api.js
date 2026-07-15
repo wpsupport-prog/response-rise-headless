@@ -3,15 +3,16 @@ import path from 'path';
 import crypto from 'crypto';
 
 export async function getPageAssetsAndHtml(slug) {
-  const wpDomain = 'https://responserise.wpenginepowered.com';
-  const url = `${wpDomain}/${slug}`;
+  const wpDomain = process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://responserise.wpenginepowered.com';
+  const cleanWpDomain = wpDomain.replace(/^https?:\/\//, '');
+  const url = `https://${cleanWpDomain}/${slug}`;
   
   try {
     const response = await fetch(url);
     const html = await response.text();
     
-    // 1. Structural Target Regex Scrapes
-    const cssRegex = /<link\s+[^>]*href=['"]([^'"]*\.css[^'"]*)['"][^>]*>/g;
+    // 1. EXTRACT ALL ORIGINAL WP STYLESHEETS (Without downloading them)
+    const cssRegex = /<link\s+[^>]*href=['"]([^'"]*)['"][^>]*>/g;
     const jsRegex = /<script[^>]*src=['"]([^'"]*)['"][^>]*>/g;
     
     const remoteStylesheets = [];
@@ -20,58 +21,52 @@ export async function getPageAssetsAndHtml(slug) {
 
     while ((match = cssRegex.exec(html)) !== null) {
       let cssUrl = match[1].trim();
-      if (cssUrl.includes('responserise.wpenginepowered.com') || cssUrl.startsWith('/wp-')) {
-        if (cssUrl.startsWith('/')) cssUrl = `${wpDomain}${cssUrl}`;
-        remoteStylesheets.push(cssUrl);
+      
+      // We only care about active stylesheets
+      if (match[0].includes('rel=') && !match[0].includes('stylesheet')) continue;
+
+      if (cssUrl.startsWith('//')) {
+        cssUrl = `https:${cssUrl}`;
+      } else if (cssUrl.startsWith('/')) {
+        cssUrl = `https://${cleanWpDomain}${cssUrl}`;
+      }
+
+      if (
+        cssUrl.includes(cleanWpDomain) || 
+        cssUrl.includes('/wp-content/') ||
+        cssUrl.includes('/wp-includes/')
+      ) {
+        if (!remoteStylesheets.includes(cssUrl)) {
+          remoteStylesheets.push(cssUrl);
+        }
       }
     }
 
+    // 2. Map scripts safely
     while ((match = jsRegex.exec(html)) !== null) {
       let jsUrl = match[1].trim();
-      if (jsUrl.includes('responserise.wpenginepowered.com') || jsUrl.startsWith('/wp-')) {
-        if (jsUrl.startsWith('/')) jsUrl = `${wpDomain}${jsUrl}`;
-        if (!jsUrl.includes('wp-emoji-loader')) {
+      
+      if (jsUrl.startsWith('//')) {
+        jsUrl = `https:${jsUrl}`;
+      } else if (jsUrl.startsWith('/')) {
+        jsUrl = `https://${cleanWpDomain}${jsUrl}`;
+      }
+
+      if (
+        jsUrl.includes(cleanWpDomain) || 
+        jsUrl.includes('/wp-content/') ||
+        jsUrl.includes('/wp-includes/')
+      ) {
+        if (!jsUrl.includes('wp-emoji-loader') && !externalScripts.includes(jsUrl)) {
           externalScripts.push(jsUrl);
         }
       }
     }
 
-    const publicCssDir = path.join(process.cwd(), 'public', 'css');
+    // 3. Keep image downloading active (for fast local image optimization)
     const publicImgDir = path.join(process.cwd(), 'public', 'images');
-
-    if (!fs.existsSync(publicCssDir)) fs.mkdirSync(publicCssDir, { recursive: true });
     if (!fs.existsSync(publicImgDir)) fs.mkdirSync(publicImgDir, { recursive: true });
 
-    // 2. Download and save stylesheets locally
-    const localStylesheets = [];
-    for (const cssUrl of remoteStylesheets) {
-      try {
-        const cleanUrl = cssUrl.split('?')[0];
-        const urlHash = crypto.createHash('md5').update(cleanUrl).digest('hex');
-        const fileName = `${urlHash}.css`;
-        const localFilePath = path.join(publicCssDir, fileName);
-
-        if (!fs.existsSync(localFilePath)) {
-          const cssResponse = await fetch(cssUrl);
-          let cssText = await cssResponse.text();
-
-          cssText = cssText.replace(/url\(['"]?(\.\.\/[^'")]+)['"]?\)/g, (m, relPath) => {
-            return `url("${wpDomain}/wp-content/plugins/elementor/assets/${relPath.replace(/\.\.\//g, '')}")`;
-          });
-
-          fs.writeFileSync(localFilePath, cssText, 'utf8');
-        }
-        
-        const localPathStr = `/css/${fileName}`;
-        if (!localStylesheets.includes(localPathStr)) {
-          localStylesheets.push(localPathStr);
-        }
-      } catch (err) {
-        console.warn(`⚠️ Skipped style layer download: ${cssUrl}`);
-      }
-    }
-
-    // 3. Extract the primary body markup block
     const bodyStart = html.indexOf('<body');
     const bodyEnd = html.indexOf('</body>');
     let bodyHtml = html;
@@ -79,7 +74,6 @@ export async function getPageAssetsAndHtml(slug) {
       bodyHtml = html.substring(bodyStart, bodyEnd + 7);
     }
 
-    // 4. Download and map images locally
     const imagesToDownload = new Set();
     const imgTagRegex = /<img([^>]*)\/?>/g;
     let imgTagMatch;
@@ -91,17 +85,10 @@ export async function getPageAssetsAndHtml(slug) {
       }
     }
 
-    const rawUrlRegex = /(https:\/\/responserise\.wpenginepowered\.com\/wp-content\/uploads\/[^'"\s\)]+)/g;
+    const rawUrlRegex = new RegExp(`(https?:\\/\\/[^/]*${cleanWpDomain}\\/wp-content\\/uploads\\/[^'"\\s\\)]+)`, 'g');
     let urlMatch;
     while ((urlMatch = rawUrlRegex.exec(bodyHtml)) !== null) {
       imagesToDownload.add(urlMatch[1].replace(/[\\']/g, '').trim());
-    }
-
-    const escapedUrlRegex = /(https:\\\/\\\/responserise\.wpenginepowered\.com\\\/wp-content\\\/uploads\\\/[^'"\s\)]+)/g;
-    let escMatch;
-    while ((escMatch = escapedUrlRegex.exec(bodyHtml)) !== null) {
-      const unescapedUrl = escMatch[1].replace(/\\\//g, '/');
-      imagesToDownload.add(unescapedUrl.trim());
     }
 
     for (const remoteImgUrl of imagesToDownload) {
@@ -120,22 +107,17 @@ export async function getPageAssetsAndHtml(slug) {
 
         const escapedNormalUrl = remoteImgUrl.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
         bodyHtml = bodyHtml.replace(new RegExp(escapedNormalUrl, 'g'), `/images/${imgFileName}`);
-
-        const escapedJsonUrl = remoteImgUrl.replace(/\//g, '\\/').replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const localJsonUrl = `/images/${imgFileName}`.replace(/\//g, '\\/');
-        bodyHtml = bodyHtml.replace(new RegExp(escapedJsonUrl, 'g'), localJsonUrl);
       } catch (imgErr) {
-        console.warn(`⚠️ Download error ignored for: ${remoteImgUrl}`);
+        // Fallback silently
       }
     }
 
-    // Clean up lazy load nodes
     bodyHtml = bodyHtml.replace(/srcset=['"][^'"]*['"]/g, '');
     bodyHtml = bodyHtml.replace(/sizes=['"][^'"]*['"]/g, '');
     bodyHtml = bodyHtml.replace(/data-srcset=['"][^'"]*['"]/g, '');
 
-    // 5. Link Conversion
-    const absoluteLinksRegex = /https?:\/\/responserise\.wpenginepowered\.com(\/[^'"]*)?/g;
+    // 4. Link Conversion
+    const absoluteLinksRegex = new RegExp(`https?:\\/\\/[^/]*${cleanWpDomain}(\\/[^'"]*)?`, 'g');
     bodyHtml = bodyHtml.replace(absoluteLinksRegex, (match, pathname) => {
       if (pathname && (pathname.includes('/wp-content') || pathname.includes('/wp-includes') || pathname.includes('/images/'))) {
         return match;
@@ -143,11 +125,9 @@ export async function getPageAssetsAndHtml(slug) {
       return pathname || '/';
     });
 
-    // 6. CRITICAL FIX FOR BLANK PAGES: Pre-strip elementor-invisible initialization flags 
-    // so hidden blocks display immediately if the dynamic scripts face race conditions on load
     bodyHtml = bodyHtml.replace(/\belementor-invisible\b/g, '');
 
-    // 7. Extract internal layout style blocks
+    // 5. Extract internal layout style blocks (includes WooCommerce dynamic configurations)
     const inlineStyles = [];
     const styleBlockRegex = /<style[^>]*>([\s\S]*?)<\/style>/g;
     let styleMatch;
@@ -155,7 +135,7 @@ export async function getPageAssetsAndHtml(slug) {
       inlineStyles.push(styleMatch[1]);
     }
 
-    // 8. Safe inline scripts filter
+    // 6. Safe inline scripts filter
     const inlineScripts = [];
     const scriptBlockRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
     let scriptMatch;
@@ -163,7 +143,7 @@ export async function getPageAssetsAndHtml(slug) {
       const scriptContent = scriptMatch[1].trim();
       if (scriptContent.includes('window._wpemojiSettings')) continue; 
       if (scriptContent.includes('elementorFrontendConfig') || scriptContent.includes('wp_inline') || scriptContent.includes('var ')) {
-        const cleanedScript = scriptContent.replace(/https?:\/\/responserise\.wpenginepowered\.com/g, '');
+        const cleanedScript = scriptContent.replace(new RegExp(`https?:\\/\\/[^/]*${cleanWpDomain}`, 'g'), '');
         inlineScripts.push(cleanedScript);
       }
     }
@@ -189,7 +169,6 @@ export async function getPageAssetsAndHtml(slug) {
     `;
     inlineStyles.unshift(coreVariableFallbackKit);
 
-    // 9. NEW: Extract the first major content image to use as our LCP target
     let lcpImageUrl = '';
     const firstImgMatch = bodyHtml.match(/<img[^>]+src=['"]([^'"]+)['"]/);
     if (firstImgMatch && firstImgMatch[1]) {
@@ -198,11 +177,11 @@ export async function getPageAssetsAndHtml(slug) {
 
     return {
       html: bodyHtml,
-      stylesheets: localStylesheets,
+      stylesheets: remoteStylesheets, // Serves original live URLs directly
       inlineStyles,
       externalScripts,
       inlineScripts,
-      lcpImageUrl // <-- Send this to Next.js page template
+      lcpImageUrl
     };
   } catch (error) {
     console.error("❌ Link rewrite parsing engine exception:", error);
@@ -216,6 +195,7 @@ export async function getAllPagesWithSlugs() {
     { uri: '/online-courses' }, 
     { uri: '/about-us' }, 
     { uri: '/contact' },
-    { uri: '/meeting-schedule' } // Explicitly register this sub-route map key
+    { uri: '/meeting-schedule' },
+    { uri: '/my-account' }
   ];
 }
