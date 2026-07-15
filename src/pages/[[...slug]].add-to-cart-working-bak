@@ -5,9 +5,6 @@ import { useEffect, useState } from 'react';
 import { getPageAssetsAndHtml, getAllPagesWithSlugs } from '../lib/api';
 import Layout from '../components/Layout';
 
-// === FIX: GLOBALLY CACHE STRIPE INSTANCE OUTSIDE THE COMPONENT ===
-let globalStripeInstance = null;
-
 export default function HeadlessDynamicRender({ pageData }) {
   const router = useRouter();
   const [domReady, setDomReady] = useState(false);
@@ -57,25 +54,19 @@ export default function HeadlessDynamicRender({ pageData }) {
   const [shippingMethods, setShippingMethods] = useState([
     { id: 'flat_rate', title: 'Flat Rate', cost: 5.00 },
     { id: 'local_pickup', title: 'Local Pickup', cost: 0.00 }
-	
   ]);
   const [selectedShippingMethod, setSelectedShippingMethod] = useState({ id: 'flat_rate', title: 'Flat Rate', cost: 5.00 });
-
-	// === NEW ENHANCEMENT: Live Payment Gateways ===
-  const [paymentGateways, setPaymentGateways] = useState([]);
-  const [selectedPaymentGateway, setSelectedPaymentGateway] = useState('cod'); // Fallback default ID
-  const [isLoadingGateways, setIsLoadingGateways] = useState(false);
-
+  
+  // === NEW ENHANCEMENTS: Coupons, Tax, and Dynamic Shipping ===
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // stores { code, type, amount }
+  const [couponError, setCouponError] = useState('');
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [taxTotal, setTaxTotal] = useState(0);
 
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(null);
-  
-  // === NEW STRIPE ENHANCEMENT STATES ===
-  const [stripeInstance, setStripeInstance] = useState(null);
-  const [stripeCardElement, setStripeCardElement] = useState(null);
-  const [stripeError, setStripeError] = useState('');
-  const [isStripeReady, setIsStripeReady] = useState(false);
 
   // Dashboard Sub-page Tab Router
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -260,214 +251,7 @@ export default function HeadlessDynamicRender({ pageData }) {
       }, 500);
     }
   }, [isProductPage, domReady]);
-  
-	// === PRODUCTION-SAFE STRIPE MOUNT & CLEANUP EFFECT ===
-  useEffect(() => {
-    // 1. If we aren't on the checkout page or stripe isn't selected, do nothing
-    if (!isCheckoutPage || selectedPaymentGateway !== 'stripe') {
-      return;
-    }
 
-    // Keep local references inside the effect scope for clean unmounting
-    let cardNumberInstance = null;
-    let cardExpiryInstance = null;
-    let cardCvcInstance = null;
-
-    const initStripe = () => {
-      const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_TYooMQauvdEDq54NiTphI7jx';
-      
-      if (!window.Stripe) return;
-
-      if (!globalStripeInstance) {
-        globalStripeInstance = window.Stripe(publishableKey);
-      }
-
-      if (
-        !document.getElementById('stripe-card-number-mount') ||
-        !document.getElementById('stripe-card-expiry-mount') ||
-        !document.getElementById('stripe-card-cvc-mount')
-      ) return;
-
-      const elements = globalStripeInstance.elements();
-      
-      const elementStyles = {
-        style: {
-          base: {
-            color: '#1a202c',
-            fontFamily: '"Inter", sans-serif',
-            fontSize: '14px',
-            '::placeholder': { color: '#a0aec0' },
-          },
-          invalid: { color: '#e53e3e', iconColor: '#e53e3e' },
-        }
-      };
-
-      cardNumberInstance = elements.create('cardNumber', elementStyles);
-      cardExpiryInstance = elements.create('cardExpiry', elementStyles);
-      cardCvcInstance = elements.create('cardCvc', elementStyles);
-
-      document.getElementById('stripe-card-number-mount').innerHTML = '';
-      document.getElementById('stripe-card-expiry-mount').innerHTML = '';
-      document.getElementById('stripe-card-cvc-mount').innerHTML = '';
-
-      cardNumberInstance.mount('#stripe-card-number-mount');
-      cardExpiryInstance.mount('#stripe-card-expiry-mount');
-      cardCvcInstance.mount('#stripe-card-cvc-mount');
-
-      setStripeCardElement(cardNumberInstance);
-    };
-
-    if (window.Stripe) {
-      initStripe();
-    } else {
-      setIsStripeReady(true);
-    }
-
-    // 2. React Unmount Return: Safely destroy elements on page transition
-    return () => {
-      try {
-        if (cardNumberInstance) cardNumberInstance.destroy();
-        if (cardExpiryInstance) cardExpiryInstance.destroy();
-        if (cardCvcInstance) cardCvcInstance.destroy();
-      } catch (err) {
-        // Catch and silence unmounting exceptions when the DOM unloads first
-        console.warn("Stripe unmounted safely during page transition.");
-      }
-      setStripeCardElement(null);
-    };
-  }, [isCheckoutPage, selectedPaymentGateway, isStripeReady]);
-  
-	// === NEW ENHANCEMENT: Fetch Live Payment Gateways on Mount ===
-  useEffect(() => {
-    if (!isCheckoutPage) return;
-
-    const fetchPaymentGateways = async () => {
-      setIsLoadingGateways(true);
-      try {
-        const res = await fetch('/api/wc-gateways');
-        if (res.ok) {
-          const data = await res.json();
-          setPaymentGateways(data);
-          if (data.length > 0) {
-            setSelectedPaymentGateway(data[0].id); // Select the first available live method as default
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching live WooCommerce payment gateways:', err);
-      } finally {
-        setIsLoadingGateways(false);
-      }
-    };
-
-    fetchPaymentGateways();
-  }, [isCheckoutPage]);
-  
-  // === UPDATE STRIPE MOUNT EFFECT TO USE GLOBAL CACHE ===
-  useEffect(() => {
-    if (!isCheckoutPage || selectedPaymentGateway !== 'stripe') {
-      if (stripeCardElement) {
-        stripeCardElement.destroy();
-        setStripeCardElement(null);
-      }
-      return;
-    }
-
-    const initStripe = () => {
-      const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_TYooMQauvdEDq54NiTphI7jx';
-      
-      if (!window.Stripe) return;
-
-      // Force use of the single global Stripe instance
-      if (!globalStripeInstance) {
-        globalStripeInstance = window.Stripe(publishableKey);
-      }
-
-      if (
-        !document.getElementById('stripe-card-number-mount') ||
-        !document.getElementById('stripe-card-expiry-mount') ||
-        !document.getElementById('stripe-card-cvc-mount')
-      ) return;
-
-      const elements = globalStripeInstance.elements();
-      
-      const elementStyles = {
-        style: {
-          base: {
-            color: '#1a202c',
-            fontFamily: '"Inter", sans-serif',
-            fontSize: '14px',
-            '::placeholder': { color: '#a0aec0' },
-          },
-          invalid: { color: '#e53e3e', iconColor: '#e53e3e' },
-        }
-      };
-
-      const cardNumber = elements.create('cardNumber', elementStyles);
-      const cardExpiry = elements.create('cardExpiry', elementStyles);
-      const cardCvc = elements.create('cardCvc', elementStyles);
-
-      document.getElementById('stripe-card-number-mount').innerHTML = '';
-      document.getElementById('stripe-card-expiry-mount').innerHTML = '';
-      document.getElementById('stripe-card-cvc-mount').innerHTML = '';
-
-      cardNumber.mount('#stripe-card-number-mount');
-      cardExpiry.mount('#stripe-card-expiry-mount');
-      cardCvc.mount('#stripe-card-cvc-mount');
-
-      setStripeCardElement(cardNumber);
-    };
-
-    if (window.Stripe) {
-      initStripe();
-    } else {
-      setIsStripeReady(true);
-    }
-  }, [isCheckoutPage, selectedPaymentGateway, isStripeReady]);
-
-	// === SYNCING ENHANCEMENT: Static Header Elementor Cart Sync ===
-  useEffect(() => {
-    const syncStaticHeaderCart = () => {
-      const totalQty = cartItems.reduce((sum, item) => sum + item.qty, 0);
-      
-      // Selectors for common Elementor, WooCommerce, and theme cart badges
-      const badgeSelectors = [
-        '.elementor-button-icon[data-counter]',
-        '.cart-contents .count',
-        '.woocommerce-active-cart-count',
-        '.header-cart-count',
-        '.elementor-menu-cart__toggle .elementor-button-icon-wrapper[data-counter]',
-        '.elementor-button-icon-wrapper'
-      ];
-      
-      badgeSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(element => {
-          if (element) {
-            element.textContent = totalQty;
-            element.setAttribute('data-counter', totalQty); 
-          }
-        });
-      });
-    };
-    
-    syncStaticHeaderCart();
-  }, [cartItems]);
-
-  // === SYNCING ENHANCEMENT: Multi-Tab LocalStorage Listener ===
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'headless_cart') {
-        const updatedCart = JSON.parse(e.newValue || '[]');
-        setCartItems(updatedCart);
-        const subtotal = updatedCart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
-        setCartSubtotal(subtotal);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-	
   // 6. Mutation Observers for Elementor DOM rendering
   useEffect(() => {
     if (!pageData) return;
@@ -487,9 +271,6 @@ export default function HeadlessDynamicRender({ pageData }) {
     const updated = cartItems.map(item => item.id === productId ? { ...item, qty: newQty } : item);
     setCartItems(updated);
     localStorage.setItem('headless_cart', JSON.stringify(updated));
-	
-	window.dispatchEvent(new Event('storage'));
-	
     setCartSubtotal(updated.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0));
   };
 
@@ -498,9 +279,6 @@ export default function HeadlessDynamicRender({ pageData }) {
     const updated = cartItems.filter(item => item.id !== productId);
     setCartItems(updated);
     localStorage.setItem('headless_cart', JSON.stringify(updated));
-	
-	window.dispatchEvent(new Event('storage'));
-	
     setCartSubtotal(updated.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0));
   };
 
@@ -527,20 +305,12 @@ export default function HeadlessDynamicRender({ pageData }) {
       }
 
       localStorage.setItem('headless_cart', JSON.stringify(cartItems));
-	  
-	  window.dispatchEvent(new Event('storage'));
-	  
       setAddedMessage(`Successfully added ${quantity} × "${productData.name}" to your cart!`);
       setAddingToCart(false);
     }, 600);
   };
 
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponError('');
-  };
-
-	// === NEW ENHANCEMENT: Coupon Handlers ===
+  // ENHANCEMENT: Apply Coupon Handler
   const handleApplyCoupon = async (e) => {
     e.preventDefault();
     if (!couponCode.trim()) return;
@@ -564,7 +334,12 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   };
 
-  // Calculate dynamic coupon values
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError('');
+  };
+
+  // ENHANCEMENT: Calculate Discount value
   let discountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percent') {
@@ -577,50 +352,21 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }
 
-  // Calculate the final actual order total
+  // Calculated final total
   const orderTotalAmount = Math.max(0, cartSubtotal - discountAmount + selectedShippingMethod.cost + taxTotal);
 
   // Handle Checkout Form Submission
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
     setOrderError('');
-    setStripeError('');
     setIsProcessingOrder(true);
-
-    let stripeTokenId = null;
-
-   // Handle Stripe tokenization beforehand if chosen
-    if (selectedPaymentGateway === 'stripe') {
-      // Use the global cached instance
-      const activeStripe = globalStripeInstance;
-
-      if (!activeStripe || !stripeCardElement) {
-        setOrderError('Stripe configuration loading failed. Please refresh the page.');
-        setIsProcessingOrder(false);
-        return;
-      }
-
-      const { token, error } = await activeStripe.createToken(stripeCardElement, {
-        name: `${checkoutFirstName} ${checkoutLastName}`,
-        address_line1: checkoutAddress,
-        address_city: checkoutCity,
-        address_zip: checkoutPostcode,
-      });
-
-      if (error) {
-        setStripeError(error.message);
-        setIsProcessingOrder(false);
-        return;
-      } else {
-        stripeTokenId = token.id;
-      }
-    }
 
     const lineItems = cartItems.map(item => ({
       product_id: item.id,
       quantity: item.qty
     }));
 
+    // Determine shipping destination parameters
     const shippingDetails = shipToDifferentAddress ? {
       first_name: shippingFirstName,
       last_name: shippingLastName,
@@ -659,14 +405,8 @@ export default function HeadlessDynamicRender({ pageData }) {
         }
       ],
       coupon_lines: appliedCoupon ? [{ code: appliedCoupon.code }] : [],
-      payment_method: selectedPaymentGateway,
-      payment_method_title: paymentGateways.find(g => g.id === selectedPaymentGateway)?.title || 'Selected Gateway',
-      
-	  // Send the token inside transaction metadata so WooCommerce processes it securely
-	  stripe_token: stripeTokenId, 
-      order_total_amount: orderTotalAmount.toFixed(2),
-      meta_data: []
-	  
+      payment_method: 'cod',
+      payment_method_title: 'Cash on Delivery'
     };
 
     try {
@@ -981,13 +721,6 @@ export default function HeadlessDynamicRender({ pageData }) {
       
       {/* CORE SINGLE PRODUCT CONTROLLER */}
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/frontend/single-product.min.js" strategy="afterInteractive" />
-
-		{/* >>> INSERT STRIPE SCRIPT LOADER RIGHT HERE: */}
-      <Script 
-        src="https://js.stripe.com/v3/" 
-        strategy="afterInteractive" 
-        onLoad={() => setIsStripeReady(true)} 
-      />
 
       {/* RENDER VIEW ROUTER */}
       {isMyAccountPage ? (
@@ -1531,91 +1264,13 @@ export default function HeadlessDynamicRender({ pageData }) {
                       </div>
                     </div>
 
-                    {/* Live WooCommerce Payment Gateway Options */}
-					<div className="space-y-3 mb-6">
-					  <p className="text-xs font-bold text-gray-400 uppercase mb-2">Payment Method</p>
-					  
-					  {isLoadingGateways ? (
-						<div className="p-4 text-center text-xs text-gray-400 animate-pulse">
-						  Loading secure payment options...
-						</div>
-					  ) : paymentGateways.length === 0 ? (
-						<div className="p-4 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
-						  No active payment gateways detected. Standard cash verification is enabled.
-						</div>
-					  ) : (
-						<div className="space-y-2">
-						  {paymentGateways.map((gateway) => (
-							<div key={gateway.id} className="p-4 bg-white border rounded-md text-xs space-y-2">
-							  <label className="flex items-center space-x-2.5 cursor-pointer select-none">
-								<input 
-								  type="radio" 
-								  name="payment_gateway" 
-								  checked={selectedPaymentGateway === gateway.id} 
-								  onChange={() => setSelectedPaymentGateway(gateway.id)} 
-								  className="text-orange-600 focus:ring-orange-500 h-4 w-4" 
-								/>
-								<span className="font-bold text-gray-700">{gateway.title}</span>
-								{gateway.id === 'stripe' && (
-								  <span className="ml-2 bg-yellow-100 text-yellow-800 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Test Mode</span>
-								)}
-							  </label>
-							  
-							  {selectedPaymentGateway === gateway.id && gateway.description && gateway.id !== 'stripe' && (
-								<p className="pl-6 pt-1 text-gray-505" dangerouslySetInnerHTML={{ __html: gateway.description }} />
-							  )}
-
-							  {/* Render the secure Stripe Elements payment block if chosen */}
-								{selectedPaymentGateway === gateway.id && gateway.id === 'stripe' && (
-								  <div className="pl-6 pt-2 space-y-4 transition-all">
-									<p className="text-gray-500 text-[11px] mb-2">
-									  Use card <strong className="bg-gray-100 px-1 py-0.5 rounded font-mono">4242 4242 4242 4242</strong> with any future expiry and CVC.
-									</p>
-									
-									{/* Clean border wrapper matching your screenshot */}
-									<div className="p-5 border border-gray-200 rounded-md bg-white shadow-sm space-y-4 max-w-lg">
-									  
-									  {/* 1. Card Number Field */}
-									  <div>
-										<label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Card Number</label>
-										<div 
-										  id="stripe-card-number-mount" 
-										  className="p-3 border rounded bg-gray-50/50 shadow-inner focus-within:border-orange-500 focus-within:bg-white transition"
-										/>
-									  </div>
-
-									  {/* 2. Expiration Date & Security Code in 2 columns */}
-									  <div className="grid grid-cols-2 gap-4">
-										<div>
-										  <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Expiration Date</label>
-										  <div 
-											id="stripe-card-expiry-mount" 
-											className="p-3 border rounded bg-gray-50/50 shadow-inner focus-within:border-orange-500 focus-within:bg-white transition"
-										  />
-										</div>
-										<div>
-										  <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Security Code</label>
-										  <div 
-											id="stripe-card-cvc-mount" 
-											className="p-3 border rounded bg-gray-50/50 shadow-inner focus-within:border-orange-500 focus-within:bg-white transition"
-										  />
-										</div>
-									  </div>
-
-									</div>
-									
-									{stripeError && (
-									  <p className="text-red-500 font-semibold text-xs mt-1 animate-pulse">
-										<i className="fas fa-exclamation-triangle mr-1"></i> {stripeError}
-									  </p>
-									)}
-								  </div>
-								)}
-							</div>
-						  ))}
-						</div>
-					  )}
-					</div>
+                    <div className="p-4 bg-white border rounded-md mb-6 text-xs text-gray-500 space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <input type="radio" id="cod" name="payment" defaultChecked className="text-orange-600 focus:ring-orange-500" />
+                        <label htmlFor="cod" className="font-bold text-gray-700">Cash on Delivery</label>
+                      </div>
+                      <p>Pay with cash upon physical manual delivery or check-in verification.</p>
+                    </div>
 
                     <button 
                       type="submit" 
