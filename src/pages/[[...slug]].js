@@ -468,6 +468,29 @@ export default function HeadlessDynamicRender({ pageData }) {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 	
+	// ====================================================
+  // === NATIVE REACT HYDRATION EFFECT ===
+  // ====================================================
+  useEffect(() => {
+    if (!isProductPage || !domReady || !productData) return;
+
+    const checkAndMount = () => {
+      const anchor = document.getElementById('headless-react-add-to-cart-anchor');
+      const mountHook = document.getElementById('headless-mount-hook');
+      if (anchor && mountHook) {
+        anchor.appendChild(mountHook);
+        mountHook.style.display = 'block';
+      }
+    };
+
+    // Run immediately, and set a fallback interval just in case the DOM is slow
+    checkAndMount();
+    const interval = setInterval(checkAndMount, 100);
+
+    return () => clearInterval(interval);
+  }, [isProductPage, domReady, productData]);
+	
+	
   // 6. Mutation Observers for Elementor DOM rendering
   useEffect(() => {
     if (!pageData) return;
@@ -845,6 +868,18 @@ export default function HeadlessDynamicRender({ pageData }) {
         (html.indexOf('<footer') !== -1 ? html.substring(html.indexOf('<footer')) : '');
     }
   }
+
+	// ====================================================
+  // === ADD THIS HELPER TO STRIP EMBEDDED SCRIPT TAGS ===
+  // ====================================================
+  const stripWordPressScripts = (rawHtml) => {
+    if (!rawHtml) return "";
+    // Remove all script blocks to prevent legacy script crashes from halting React
+    return rawHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+  };
+
+  // Run all modified views through the script stripper
+  const cleanProductHtml = stripWordPressScripts(modifiedProductHtml);
 
   return (
     <Layout>
@@ -1640,7 +1675,7 @@ export default function HeadlessDynamicRender({ pageData }) {
           {/* 1. SCRAPED LAYOUT WITH EMBEDDED MOUNT ANCHOR */}
           <div 
             className="elementor-rendered-html-wrapper" 
-            dangerouslySetInnerHTML={{ __html: modifiedProductHtml }} 
+            dangerouslySetInnerHTML={{ __html: cleanProductHtml }} 
           />
 
           {/* 2. INJECTED DYNAMIC REACT COMPONENT */}
@@ -1697,19 +1732,7 @@ export default function HeadlessDynamicRender({ pageData }) {
             </div>
           )}
 
-          <Script id="hydrate-cart-box-helper" strategy="lazyOnload">
-            {`
-              const checkInterval = setInterval(() => {
-                const anchor = document.getElementById('headless-react-add-to-cart-anchor');
-                const mountHook = document.getElementById('headless-mount-hook');
-                if (anchor && mountHook) {
-                  anchor.appendChild(mountHook);
-                  mountHook.style.display = 'block';
-                  clearInterval(checkInterval);
-                }
-              }, 100);
-            `}
-          </Script>
+          
         </div>
       ) : (
         // DEFAULT STATIC PAGE
