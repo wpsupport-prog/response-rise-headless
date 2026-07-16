@@ -1,5 +1,5 @@
-import Head from 'next/head';
 import Script from 'next/script';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { getPageAssetsAndHtml, getAllPagesWithSlugs } from '../lib/api';
