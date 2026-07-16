@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "backup": "xcopy src src_backup /E /I /H /Y"
   },
   "dependencies": {
     "next": "14.2.35",

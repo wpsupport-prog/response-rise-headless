@@ -5,11 +5,6 @@ import { useEffect, useState } from 'react';
 import { getPageAssetsAndHtml, getAllPagesWithSlugs } from '../lib/api';
 import Layout from '../components/Layout';
 
-// Sub-page component imports
-import ProductPageView from '../components/ProductPageView';
-import CartPageView from '../components/CartPageView';
-import CheckoutPageView from '../components/CheckoutPageView';
-
 export default function HeadlessDynamicRender({ pageData }) {
   const router = useRouter();
   const [domReady, setDomReady] = useState(false);
@@ -45,57 +40,44 @@ export default function HeadlessDynamicRender({ pageData }) {
   const [shippingAddress, setShippingAddress] = useState('');
   const [shippingCity, setShippingCity] = useState('');
   const [shippingPostcode, setShippingPostcode] = useState('');
-  
-  // Lifted Country & State selectors
-  const [shippingCountry, setShippingCountry] = useState('NZ');
-  const [shippingState, setShippingState] = useState('');
-  const [billingCountry, setBillingCountry] = useState('NZ');
-  const [billingState, setBillingState] = useState('');
-  
-  const [useSameAddress, setUseSameAddress] = useState(true);
 
-  // Coupon States
+  // ENHANCEMENT: Coupon States
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState(null); 
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // stores { code, type, amount }
   const [couponError, setCouponError] = useState('');
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
-  // Tax States
+  // ENHANCEMENT: Tax States
   const [taxTotal, setTaxTotal] = useState(0);
 
-  // Dynamic Shipping Rates State
+  // ENHANCEMENT: Dynamic Shipping Rates State (Defaults to fallback)
   const [shippingMethods, setShippingMethods] = useState([
     { id: 'flat_rate', title: 'Flat Rate', cost: 5.00 },
     { id: 'local_pickup', title: 'Local Pickup', cost: 0.00 }
   ]);
   const [selectedShippingMethod, setSelectedShippingMethod] = useState({ id: 'flat_rate', title: 'Flat Rate', cost: 5.00 });
-
-  // Payment Gateways
-  const [paymentGateways, setPaymentGateways] = useState([]);
-  const [selectedPaymentGateway, setSelectedPaymentGateway] = useState('cod');
-  const [isLoadingGateways, setIsLoadingGateways] = useState(false);
   
-  const [stripeInstance, setStripeInstance] = useState(null);
+  // === NEW ENHANCEMENTS: Coupons, Tax, and Dynamic Shipping ===
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // stores { code, type, amount }
+  const [couponError, setCouponError] = useState('');
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [taxTotal, setTaxTotal] = useState(0);
 
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(null);
-  
-  // Stripe States
-  const [stripeCardElement, setStripeCardElement] = useState(null);
-  const [stripeError, setStripeError] = useState('');
-  const [isStripeReady, setIsStripeReady] = useState(false);
 
-  // Dashboard Tab Router
+  // Dashboard Sub-page Tab Router
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // WooCommerce Store States
+  // Real-time WooCommerce Store States
   const [customerData, setCustomerData] = useState(null);
   const [orders, setOrders] = useState([]);
   const [downloads, setDownloads] = useState([]);
   const [isLoadingStoreData, setIsLoadingStoreData] = useState(false);
 
-  // Auth States
+  // Form States (Login, Register, Details)
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -123,6 +105,8 @@ export default function HeadlessDynamicRender({ pageData }) {
   const isMyAccountPage = currentSlug === 'my-account';
   const isCartPage = currentSlug === 'cart';
   const isCheckoutPage = currentSlug === 'checkout';
+  
+  // Determine if this is a Product page based on HTML indicators or the slug path
   const isProductPage = pageData?.html?.includes('product-type-') || currentSlug.includes('product');
 
   // 1. Validate Active Sessions on Mount
@@ -135,7 +119,7 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }, []);
 
-  // 2. Fetch WooCommerce Data if on My Account or Checkout
+  // 2. Fetch WooCommerce Data if on My Account Page or Checkout Page (to pre-fill details)
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
     if (!isMyAccountPage && !isCheckoutPage) return;
@@ -151,6 +135,7 @@ export default function HeadlessDynamicRender({ pageData }) {
           setEditLastName(data.last_name || '');
           setEditEmail(data.email || '');
 
+          // If on Checkout, pre-fill billing details
           if (isCheckoutPage) {
             setCheckoutFirstName(data.first_name || '');
             setCheckoutLastName(data.last_name || '');
@@ -160,6 +145,7 @@ export default function HeadlessDynamicRender({ pageData }) {
             setCheckoutEmail(data.billing?.email || user.email || '');
             setCheckoutPhone(data.billing?.phone || '');
 
+            // Pre-fill shipping details
             setShippingFirstName(data.shipping?.first_name || '');
             setShippingLastName(data.shipping?.last_name || '');
             setShippingAddress(data.shipping?.address_1 || '');
@@ -211,13 +197,14 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }, [isCartPage, isCheckoutPage]);
 
-  // Debounced Hook to Fetch Dynamic Shipping and Taxes on Address Input
+  // ENHANCEMENT: Debounced Hook to Fetch Dynamic Shipping and Taxes on Address Input
   useEffect(() => {
     if (!isCheckoutPage || cartItems.length === 0) return;
 
     const activePostcode = shipToDifferentAddress ? shippingPostcode : checkoutPostcode;
     const activeCity = shipToDifferentAddress ? shippingCity : checkoutCity;
 
+    // Run dynamic validation API
     const updateRatesAndTax = async () => {
       try {
         const res = await fetch('/api/wc-checkout-totals', {
@@ -235,6 +222,7 @@ export default function HeadlessDynamicRender({ pageData }) {
           const data = await res.json();
           if (data.shippingMethods && data.shippingMethods.length > 0) {
             setShippingMethods(data.shippingMethods);
+            // Match previous selection ID to preserve selection, or fallback to first
             const matchedSelection = data.shippingMethods.find(m => m.id === selectedShippingMethod.id);
             setSelectedShippingMethod(matchedSelection || data.shippingMethods[0]);
           }
@@ -263,93 +251,8 @@ export default function HeadlessDynamicRender({ pageData }) {
       }, 500);
     }
   }, [isProductPage, domReady]);
-  
-  // Fetch Live Payment Gateways on Mount
-  useEffect(() => {
-    if (!isCheckoutPage) return;
 
-    const fetchPaymentGateways = async () => {
-      setIsLoadingGateways(true);
-      try {
-        const res = await fetch('/api/wc-gateways');
-        if (res.ok) {
-          const data = await res.json();
-          setPaymentGateways(data);
-          if (data.length > 0) {
-            setSelectedPaymentGateway(data[0].id);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching live WooCommerce payment gateways:', err);
-      } finally {
-        setIsLoadingGateways(false);
-      }
-    };
-
-    fetchPaymentGateways();
-  }, [isCheckoutPage]);
-
-  // Static Header Elementor Cart Sync
-  useEffect(() => {
-    const syncStaticHeaderCart = () => {
-      const totalQty = cartItems.reduce((sum, item) => sum + item.qty, 0);
-      const badgeSelectors = [
-        '.elementor-button-icon[data-counter]',
-        '.cart-contents .count',
-        '.woocommerce-active-cart-count',
-        '.header-cart-count',
-        '.elementor-menu-cart__toggle .elementor-button-icon-wrapper[data-counter]',
-        '.elementor-button-icon-wrapper'
-      ];
-      
-      badgeSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(element => {
-          if (element) {
-            element.textContent = totalQty;
-            element.setAttribute('data-counter', totalQty); 
-          }
-        });
-      });
-    };
-    
-    syncStaticHeaderCart();
-  }, [cartItems]);
-
-  // Multi-Tab LocalStorage Syncing
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'headless_cart') {
-        const updatedCart = JSON.parse(e.newValue || '[]');
-        setCartItems(updatedCart);
-        const subtotal = updatedCart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
-        setCartSubtotal(subtotal);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-  
-  // Native React Hydration Anchor
-  useEffect(() => {
-    if (!isProductPage || !domReady || !productData) return;
-
-    const checkAndMount = () => {
-      const anchor = document.getElementById('headless-react-add-to-cart-anchor');
-      const mountHook = document.getElementById('headless-mount-hook');
-      if (anchor && mountHook) {
-        anchor.appendChild(mountHook);
-        mountHook.style.display = 'block';
-      }
-    };
-
-    checkAndMount();
-    const interval = setInterval(checkAndMount, 100);
-    return () => clearInterval(interval);
-  }, [isProductPage, domReady, productData]);
-  
-  // Mutation Observers for Elementor DOM rendering
+  // 6. Mutation Observers for Elementor DOM rendering
   useEffect(() => {
     if (!pageData) return;
     const wrapper = document.querySelector('.elementor-rendered-html-wrapper');
@@ -362,36 +265,37 @@ export default function HeadlessDynamicRender({ pageData }) {
 
   const wpDomain = process.env.NEXT_PUBLIC_WORDPRESS_URL || 'https://responserise.wpenginepowered.com';
 
+  // Handle Cart Quantity Updates
   const handleUpdateQty = (productId, newQty) => {
     if (newQty < 1) return;
     const updated = cartItems.map(item => item.id === productId ? { ...item, qty: newQty } : item);
     setCartItems(updated);
     localStorage.setItem('headless_cart', JSON.stringify(updated));
-    window.dispatchEvent(new Event('storage'));
     setCartSubtotal(updated.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0));
   };
 
+  // Handle Cart Item Removal
   const handleRemoveItem = (productId) => {
     const updated = cartItems.filter(item => item.id !== productId);
     setCartItems(updated);
     localStorage.setItem('headless_cart', JSON.stringify(updated));
-    window.dispatchEvent(new Event('storage'));
     setCartSubtotal(updated.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0));
   };
 
+  // Handle Cart Submission locally
   const handleAddToCart = (e) => {
     e.preventDefault();
     setAddingToCart(true);
     setAddedMessage('');
 
     setTimeout(() => {
-      const cart = JSON.parse(localStorage.getItem('headless_cart') || '[]');
-      const existingItem = cart.find(item => item.id === productData.id);
+      const cartItems = JSON.parse(localStorage.getItem('headless_cart') || '[]');
+      const existingItem = cartItems.find(item => item.id === productData.id);
 
       if (existingItem) {
         existingItem.qty += quantity;
       } else {
-        cart.push({
+        cartItems.push({
           id: productData.id,
           name: productData.name,
           price: productData.price,
@@ -400,18 +304,13 @@ export default function HeadlessDynamicRender({ pageData }) {
         });
       }
 
-      localStorage.setItem('headless_cart', JSON.stringify(cart));
-      window.dispatchEvent(new Event('storage'));
+      localStorage.setItem('headless_cart', JSON.stringify(cartItems));
       setAddedMessage(`Successfully added ${quantity} × "${productData.name}" to your cart!`);
       setAddingToCart(false);
     }, 600);
   };
 
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponError('');
-  };
-
+  // ENHANCEMENT: Apply Coupon Handler
   const handleApplyCoupon = async (e) => {
     e.preventDefault();
     if (!couponCode.trim()) return;
@@ -435,7 +334,12 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   };
 
-  // Coupon calculations
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError('');
+  };
+
+  // ENHANCEMENT: Calculate Discount value
   let discountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percent') {
@@ -448,200 +352,89 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }
 
+  // Calculated final total
   const orderTotalAmount = Math.max(0, cartSubtotal - discountAmount + selectedShippingMethod.cost + taxTotal);
 
- const handleCheckoutSubmit = async (e) => {
+  // Handle Checkout Form Submission
+  const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
+    setOrderError('');
     setIsProcessingOrder(true);
-    setOrderError(null);
+
+    const lineItems = cartItems.map(item => ({
+      product_id: item.id,
+      quantity: item.qty
+    }));
+
+    // Determine shipping destination parameters
+    const shippingDetails = shipToDifferentAddress ? {
+      first_name: shippingFirstName,
+      last_name: shippingLastName,
+      address_1: shippingAddress,
+      city: shippingCity,
+      postcode: shippingPostcode,
+      country: 'US'
+    } : {
+      first_name: checkoutFirstName,
+      last_name: checkoutLastName,
+      address_1: checkoutAddress,
+      city: checkoutCity,
+      postcode: checkoutPostcode,
+      country: 'US'
+    };
+
+    const orderData = {
+      customer_id: user?.id || 0,
+      billing: {
+        first_name: checkoutFirstName,
+        last_name: checkoutLastName,
+        address_1: checkoutAddress,
+        city: checkoutCity,
+        postcode: checkoutPostcode,
+        email: checkoutEmail,
+        phone: checkoutPhone,
+        country: 'US'
+      },
+      shipping: shippingDetails,
+      line_items: lineItems,
+      shipping_lines: [
+        {
+          method_id: selectedShippingMethod.id,
+          method_title: selectedShippingMethod.title,
+          total: selectedShippingMethod.cost.toFixed(2)
+        }
+      ],
+      coupon_lines: appliedCoupon ? [{ code: appliedCoupon.code }] : [],
+      payment_method: 'cod',
+      payment_method_title: 'Cash on Delivery'
+    };
 
     try {
-     // 1. DYNAMIC USER DETECTION
-      let activeUserId = 0;
-      
-      if (typeof window !== 'undefined') {
-        // Fetch from your exact localStorage key
-        const rawUserData = localStorage.getItem('headless_user_data');
-        if (rawUserData) {
-          const parsedUser = JSON.parse(rawUserData);
-          activeUserId = Number(parsedUser.id || 0);
-        }
-      }
-
-      console.log("🛒 Submitting order. Detected WooCommerce Customer ID:", activeUserId);
-
-      // 2. Billing Object Mapping
-      const billingPayload = {
-        first_name: useSameAddress ? (shippingFirstName || '') : (checkoutFirstName || ''),
-        last_name: useSameAddress ? (shippingLastName || '') : (checkoutLastName || ''),
-        address_1: useSameAddress ? (shippingAddress || '') : (checkoutAddress || ''),
-        city: useSameAddress ? (shippingCity || '') : (checkoutCity || ''),
-        state: useSameAddress ? (shippingState || '') : (billingState || ''),
-        postcode: useSameAddress ? (shippingPostcode || '') : (checkoutPostcode || ''),
-        country: 'NZ',
-        email: checkoutEmail || '',
-        phone: checkoutPhone || ''
-      };
-
-      // 3. Shipping Object Mapping
-      const shippingPayload = {
-        first_name: shippingFirstName || '',
-        last_name: shippingLastName || '',
-        address_1: shippingAddress || '',
-        city: shippingCity || '',
-        state: shippingState || '',
-        postcode: shippingPostcode || '',
-        country: 'NZ'
-      };
-
-      // 4. Order Payload
-      const orderPayload = {
-        payment_method: selectedPaymentGateway || 'stripe',
-        payment_method_title: selectedPaymentGateway === 'stripe' ? 'Credit Card (Stripe)' : 'Cash on Delivery',
-        set_paid: false, 
-        customer_id: activeUserId, // 👈 Sets the registered customer ID
-        billing: billingPayload,     
-        shipping: shippingPayload,   
-        line_items: cartItems.map(item => ({
-          product_id: Number(item.id),
-          quantity: Number(item.qty)
-        })),
-        shipping_lines: [
-          {
-            method_id: selectedShippingMethod?.id || 'flat_rate',
-            method_title: selectedShippingMethod?.title || 'Flat rate',
-            total: String(selectedShippingMethod?.cost || '5.00')
-          }
-        ]
-      };
-
-      // 5. Send POST to wc-create-order
-      const response = await fetch(`/api/wc-create-order`, { 
+      const res = await fetch('/api/wc-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload)
+        body: JSON.stringify(orderData)
       });
 
-      const responseText = await response.text();
-      let orderResult = {};
-      
-      try {
-        orderResult = JSON.parse(responseText);
-      } catch (parseErr) {
-        throw new Error("The checkout server returned an invalid response format.");
+      const data = await res.json();
+
+      if (res.ok) {
+        setOrderSuccess(data);
+        localStorage.removeItem('headless_cart'); // Flush local cart
+        setCartItems([]);
+        setCartSubtotal(0);
+        setAppliedCoupon(null);
+      } else {
+        setOrderError(data.message || 'There was an issue processing your order.');
       }
-
-      if (!response.ok || !orderResult.id) {
-        throw new Error(orderResult.message || "Failed to initialize the order in WooCommerce.");
-      }
-
-      const createdOrderId = orderResult.id;
-
-      // 6. Stripe Payment Processing
-      if (selectedPaymentGateway === 'stripe') {
-        if (!stripeInstance || !stripeCardElement) {
-          throw new Error("Stripe is not fully initialized. Please reload the page.");
-        }
-
-        const paymentIntentRes = await fetch('/api/stripe-intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: orderTotalAmount, orderId: createdOrderId })
-        });
-
-        const { clientSecret } = await paymentIntentRes.json();
-
-        if (!clientSecret) {
-          throw new Error("Could not retrieve Stripe checkout transaction key.");
-        }
-
-        const stripeResult = await stripeInstance.confirmCardPayment(clientSecret, {
-          payment_method: {
-            card: stripeCardElement,
-            billing_details: {
-              name: `${billingPayload.first_name} ${billingPayload.last_name}`,
-              email: billingPayload.email,
-              phone: billingPayload.phone,
-              address: {
-                line1: billingPayload.address_1,
-                city: billingPayload.city,
-                postal_code: billingPayload.postcode,
-                country: 'NZ'
-              }
-            }
-          }
-        });
-
-        if (stripeResult.error) {
-          throw new Error(stripeResult.error.message);
-        }
-
-        if (stripeResult.paymentIntent && stripeResult.paymentIntent.status === 'succeeded') {
-          const stripeTransactionId = stripeResult.paymentIntent.id;
-
-          // 7. Update WooCommerce order status to processing and pass transaction metadata
-          const updateResponse = await fetch(`/api/wc-update-order-paid`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              orderId: createdOrderId,
-              transactionId: stripeTransactionId,
-              status: 'processing'
-            })
-          });
-
-          const updatedOrderResult = await updateResponse.json();
-
-          if (updateResponse.ok) {
-            // Background update to copy addresses to user profile
-            try {
-              if (activeUserId > 0) {
-                await fetch('/api/wc-customer', {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    userId: activeUserId,
-                    billing: billingPayload,
-                    shipping: shippingPayload
-                  })
-                });
-              }
-            } catch (err) {
-              console.warn("Addresses saved, profile update skipped:", err);
-            }
-
-            // 1. Set final order success data
-            setOrderSuccess(updatedOrderResult);
-
-            // 2. Clear React state
-            setCartItems([]); 
-
-            // 3. Clear persistent cart data
-            if (typeof window !== 'undefined') {
-              // Target your exact cart key
-              localStorage.removeItem('storeApiCartData');
-              
-              // Optional: Keep other common fallbacks wiped just in case
-              localStorage.removeItem('cart');
-              sessionStorage.removeItem('storeApiCartData');
-            }
-
-            console.log("🧹 React state and storeApiCartData cleared successfully!");
-			
-          } else {
-            throw new Error(updatedOrderResult.message || "Payment succeeded, but metadata registration failed.");
-          }
-        }
-      }
-
     } catch (err) {
-      console.error("❌ Checkout order submission failed:", err);
-      setOrderError(err.message || "An unexpected error occurred during submission.");
+      setOrderError('Connection error while submitting checkout credentials.');
     } finally {
       setIsProcessingOrder(false);
     }
   };
 
+  // Auth Submit Handlers (Login, Register, Update)
   const handleLoginSubmit = async (e) => {
     e.preventDefault(); setLoginError(''); setSuccessMessage(''); setIsLoggingIn(true);
     try {
@@ -733,6 +526,7 @@ export default function HeadlessDynamicRender({ pageData }) {
 
   const { html, stylesheets, inlineStyles, headerHtml, footerHtml } = pageData;
 
+  // Split scraped headers/footers
   let parsedHeader = headerHtml || "";
   let parsedFooter = footerHtml || "";
   if (html && !parsedHeader) {
@@ -744,8 +538,27 @@ export default function HeadlessDynamicRender({ pageData }) {
     if (footerStart !== -1) parsedFooter = html.substring(footerStart);
   }
 
+  // --- HTML MODIFICATIONS FOR THE PRODUCT PAGE ---
   let modifiedProductHtml = html;
 
+  if (isProductPage && productData) {
+    const formRegex = /<form[^>]*class=["']cart["'][^>]*>/i;
+    const match = html.match(formRegex);
+    
+    if (match) {
+      const formStartIndex = match.index;
+      const formEndIndex = html.indexOf('</form>', formStartIndex);
+      
+      if (formEndIndex !== -1) {
+        modifiedProductHtml = 
+          html.substring(0, formStartIndex) + 
+          '<div id="headless-react-add-to-cart-anchor"></div>' + 
+          html.substring(formEndIndex + 7);
+      }
+    }
+  }
+
+  // --- HTML MODIFICATIONS FOR THE CART PAGE ---
   if (isCartPage && html) {
     const cartSelectorRegEx = /<div[^>]*class=["']woocommerce["'][^>]*>/i;
     const match = html.match(cartSelectorRegEx);
@@ -759,6 +572,7 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }
 
+  // --- HTML MODIFICATIONS FOR THE CHECKOUT PAGE ---
   if (isCheckoutPage && html) {
     const checkoutSelectorRegEx = /<div[^>]*class=["']woocommerce["'][^>]*>/i;
     const match = html.match(checkoutSelectorRegEx);
@@ -772,272 +586,31 @@ export default function HeadlessDynamicRender({ pageData }) {
     }
   }
 
-  const stripWordPressScripts = (rawHtml) => {
-    if (!rawHtml) return "";
-    
-    // 1. Remove all legacy block script tags
-    let cleaned = rawHtml.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-    
-    // 2. Remove WooCommerce or Jetpack remote tracking beacons/pixel images
-    cleaned = cleaned.replace(/<img[^>]*src=["'][^"']*pixel\.wp\.com[^"']*["'][^>]*>/gi, "");
-    cleaned = cleaned.replace(/<iframe[^>]*src=["'][^"']*pixel\.wp\.com[^"']*["'][^>]*><\/iframe>/gi, "");
-    
-    return cleaned;
-  };
-
-  const cleanProductHtml = stripWordPressScripts(modifiedProductHtml);
-
   return (
     <Layout>
       <Head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
-		
-		{/* USE A CLEAN, STANDARD JQUERY CDN TO PREVENT DOM DISPATCH COLLISIONS */}
-		<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossOrigin="anonymous" />
-	  
-		{/* 2. REAL SMARTMENUS ENGINE */}
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.smartmenus/1.2.1/jquery.smartmenus.min.js" integrity="sha512-W6gSceSThz18K9z78g6SeN90XitS8uI4xid5E0WgtpW2TOfO0f0Nka9G79nC7W+R6TOfV8+t9uYOpZfIn84V0w==" crossOrigin="anonymous" />
-
-        {/* ULTRA-DEFENSIVE SELF-HEALING JQUERY INTERCEPTOR & DROPDOWN RESTORATION */}
-        <script dangerouslySetInnerHTML={{ __html: `
-          (function() {
-            // Helper function to apply polyfills, stubs, and transfer plugins to ANY jQuery instance
-            function applyCompatibilityShield(newJq, oldJq) {
-              if (!newJq || !newJq.fn) return;
-
-              // A. TRANSFER PLUGINS: If an old jQuery exists, migrate its custom plugins (like smartmenus) to the new instance
-              if (oldJq && oldJq.fn) {
-                const pluginsToMigrate = ['smartmenus', 'SmartMenus', 'sticky', 'numerator'];
-                pluginsToMigrate.forEach(pluginName => {
-                  // Check prototype methods
-                  if (oldJq.fn[pluginName] && !newJq.fn[pluginName]) {
-                    newJq.fn[pluginName] = oldJq.fn[pluginName];
-                  }
-                  // Check global constructor class methods (specifically SmartMenus)
-                  if (oldJq[pluginName] && !newJq[pluginName]) {
-                    newJq[pluginName] = oldJq[pluginName];
-                  }
-                });
-              }
-
-              // B. Ensure the SmartMenus global constructor fallback is present
-              if (!newJq.SmartMenus) {
-                newJq.SmartMenus = function() {};
-                newJq.SmartMenus.prototype = {
-                  init: function() {},
-                  destroy: function() {},
-                  refresh: function() {},
-                  themeMenu: function() {}
-                };
-                newJq.SmartMenus.defaults = {};
-              }
-
-              // C. Universal pseudo-selectors polyfill for focus-traps
-              const focusablePolyfill = function(el) {
-                try {
-                  const nodeName = el.nodeName.toLowerCase();
-                  const tabIndex = newJq.attr(el, 'tabindex');
-                  const hasTabindex = !isNaN(tabIndex);
-                  const isFocusableField = /^(input|select|textarea|button|object)$/.test(nodeName) && !el.disabled;
-                  const isLink = nodeName === 'a' && (el.href || hasTabindex);
-                  return (isFocusableField || isLink || hasTabindex) && newJq(el).is(':visible');
-                } catch (e) {
-                  return false;
-                }
-              };
-
-              const tabbablePolyfill = function(el) {
-                try {
-                  const tabIndex = newJq.attr(el, 'tabindex');
-                  const isTabIndexNaN = isNaN(tabIndex);
-                  return (isTabIndexNaN || tabIndex >= 0) && newJq.expr.pseudos.focusable(el);
-                } catch (e) {
-                  return false;
-                }
-              };
-
-              // Inject polyfills safely across Sizzle/jQuery selector paths
-              const paths = [newJq.expr.pseudos, newJq.expr.filters, newJq.expr[':']];
-              paths.forEach(path => {
-                if (path) {
-                  path.focusable = focusablePolyfill;
-                  path.tabbable = tabbablePolyfill;
-                }
-              });
-
-              // D. Defensive fallback stubs if they aren't migrated or loaded
-              if (!newJq.fn.sticky) {
-                newJq.fn.sticky = function() { return this; };
-              }
-              if (!newJq.fn.smartmenus) {
-                newJq.fn.smartmenus = function() { return this; };
-              }
-              if (!newJq.fn.numerator) {
-                newJq.fn.numerator = function(options) {
-                  if (options && options.toValue !== undefined) {
-                    this.text(options.toValue);
-                  }
-                  return this;
-                };
-              }
-
-              // E. Delegate standard Event Dispatching for jQuery selections
-              if (!newJq.fn.dispatchEvent) {
-                newJq.fn.dispatchEvent = function(event) {
-                  this.each(function() {
-                    try {
-                      if (this.dispatchEvent) this.dispatchEvent(event);
-                    } catch (err) {}
-                  });
-                  return this;
-                };
-              }
-            }
-
-            // Intercept window.jQuery overwrites and trigger our self-healing transfer process
-            let currentjQuery = window.jQuery;
-            Object.defineProperty(window, 'jQuery', {
-              get: function() {
-                return currentjQuery;
-              },
-              set: function(newVal) {
-                if (newVal !== currentjQuery) {
-                  applyCompatibilityShield(newVal, currentjQuery);
-                  currentjQuery = newVal;
-                }
-              },
-              configurable: true
-            });
-
-            Object.defineProperty(window, '$', {
-              get: function() {
-                return currentjQuery;
-              },
-              set: function(newVal) {
-                if (newVal !== currentjQuery) {
-                  applyCompatibilityShield(newVal, currentjQuery);
-                  currentjQuery = newVal;
-                }
-              },
-              configurable: true
-            });
-
-            // Instantly initialize CDN instance
-            if (window.jQuery) {
-              applyCompatibilityShield(window.jQuery, null);
-            }
-
-            // F. Native EventTarget Dispatch Protection
-            const originalDispatch = EventTarget.prototype.dispatchEvent;
-            EventTarget.prototype.dispatchEvent = function(event) {
-              try {
-                return originalDispatch.call(this, event);
-              } catch (err) {
-                return true;
-              }
-            };
-
-            // G. Global Window Event Proxy
-            const nativeDispatch = window.dispatchEvent;
-            window.dispatchEvent = function(event) {
-              if (event && !event.target) {
-                try {
-                  Object.defineProperty(event, 'target', { value: window, writable: true });
-                } catch(e){}
-              }
-              try {
-                return nativeDispatch.call(window, event);
-              } catch(e) {
-                return true;
-              }
-            };
-          })();
-
-          // H. Global fallback to prevent 'stretchElement is null' errors
-          window.elementorFrontend = window.elementorFrontend || {};
-          window.addEventListener('DOMContentLoaded', () => {
-            if (window.elementorFrontend && !window.elementorFrontend.stretchElement) {
-              window.elementorFrontend.stretchElement = {
-                stretch: function() {},
-                deactivate: function() {}
-              };
-            }
-          });
-        `}} />
-		
+        
+        {/* WOOCOMMERCE CORE & LAYOUT STYLESHEETS */}
         <link rel="stylesheet" href="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/css/woocommerce-layout.css" />
         <link rel="stylesheet" href="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/css/woocommerce-smallscreen.css" media="only screen and (max-width: 768px)" />
         <link rel="stylesheet" href="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/css/woocommerce.css" />
 
-		{stylesheets.map((localUrl, idx) => (
+        {stylesheets.map((localUrl, idx) => (
           <link key={`local-wp-css-${idx}`} rel="stylesheet" href={localUrl} />
         ))}
         {inlineStyles.map((styleContent, idx) => (
           <style key={`elementor-inline-css-${idx}`} dangerouslySetInnerHTML={{ __html: styleContent }} />
         ))}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
-	
-	    {/* ULTRA-RELIABLE DROPDOWN CSS HOVER, GAP-BRIDGING, & WIDTH FIX */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          /* 1. Force dropdown visibility on hover */
-          .elementor-nav-menu--main .menu-item-has-children {
-            position: relative !important;
-          }
-          .elementor-nav-menu--main .menu-item-has-children:hover > ul.sub-menu,
-          .elementor-nav-menu--main .menu-item-has-children:focus-within > ul.sub-menu,
-          .elementor-nav-menu--main ul.sub-menu:hover {
-            opacity: 1 !important;
-            visibility: visible !important;
-            display: block !important;
-            pointer-events: auto !important;
-          }
 
-          /* 2. Set submenu width and styling */
-          .elementor-nav-menu--main ul.sub-menu {
-            margin-top: 0 !important;
-            pointer-events: auto !important;
-            min-width: 280px !important;       /* Expands the container box */
-            width: max-content !important;     /* Ensures longer text fits without breaking early */
-            max-width: 350px !important;       /* Prevents excessively wide menus */
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08) !important; /* Soft premium shadow */
-            border-radius: 8px !important;     /* Smooth corners */
-            padding: 10px 0 !important;        /* Balanced internal spacing */
-          }
-
-          /* Ensure list items inside sub-menus don't clip */
-          .elementor-nav-menu--main ul.sub-menu li {
-            width: 100% !important;
-          }
-
-          /* Add proper spacing to the links inside sub-menus */
-          .elementor-nav-menu--main ul.sub-menu li a {
-            display: block !important;
-            padding: 12px 20px !important;     /* Increases the physical mouse hover target area */
-            width: 100% !important;
-            box-sizing: border-box !important;
-            white-space: normal !important;    /* Allows text wrapping if a title is extremely long */
-          }
-
-          /* 3. Create an invisible bridge to keep the hover active across gaps */
-          .elementor-nav-menu--main ul.sub-menu::before {
-            content: "" !important;
-            position: absolute !important;
-            top: -25px !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 25px !important;
-            background: transparent !important;
-            display: block !important;
-            pointer-events: auto !important;
-            z-index: 99999 !important;
-          }
-        `}} />
-
+        {/* WOOCOMMERCE PHOTOSWIPE STYLING */}
         <link rel="stylesheet" href="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/css/photoswipe/photoswipe.css" />
         <link rel="stylesheet" href="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/css/photoswipe/default-skin/default-skin.css" />
 
+        {/* INJECT CRITICAL WOOCOMMERCE GLOBAL PARAMETERS */}
         <script dangerouslySetInnerHTML={{ __html: `
           window.wc_single_product_params = {
             "i18n_required_rating_text": "Please select a rating",
@@ -1073,17 +646,85 @@ export default function HeadlessDynamicRender({ pageData }) {
             "flexslider_enabled": "1"
           };
         `}} />
+
+        {/* CSS TEXT ELEMENT RULES & ASSETS */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          /* Prevent WooCommerce's default opacity: 0 on loaded image containers */
+          .woocommerce div.product div.images.woocommerce-product-gallery,
+          .woocommerce-product-page-wrapper div.type-product .woocommerce-product-gallery {
+            opacity: 1 !important;
+            visibility: visible !important;
+          }
+
+          /* General image rules */
+          .woocommerce-product-gallery img {
+            border-radius: 8px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+          }
+
+          /* Preserving critical typography element stylings */
+          h1.product_title {
+            font-size: 2.5rem !important;
+            font-weight: 800 !important;
+            color: #1a202c !important;
+            margin-bottom: 12px !important;
+          }
+
+          p.price, .price .amount {
+            font-size: 1.85rem !important;
+            font-weight: 700 !important;
+            color: #ff6f00 !important;
+          }
+
+          /* Interactive Cart Controls Container (WooCommerce Matching styles) */
+          .react-buy-box-container {
+            margin-top: 24px !important;
+            padding: 24px !important;
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 8px !important;
+          }
+
+          /* WooCommerce quantity wrapper */
+          .react-buy-box-container .quantity-select {
+            display: inline-flex !important;
+            align-items: center !important;
+            border: 1px solid #cbd5e0 !important;
+            border-radius: 4px !important;
+            background: #ffffff !important;
+            overflow: hidden !important;
+          }
+
+          /* Match standard WooCommerce Add to Cart button appearance */
+          .single_add_to_cart_button {
+            height: 42px !important;
+            border-radius: 4px !important;
+            background-color: #ff6f00 !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            transition: background-color 0.2s ease !important;
+          }
+          .single_add_to_cart_button:hover {
+            background-color: #e65c00 !important;
+          }
+        `}} />
       </Head>
 
+      {/* BASE JQUERY CORE */}
+      <Script src="https://responserise.wpenginepowered.com/wp-includes/js/jquery/jquery.min.js" strategy="beforeInteractive" />
+
+      {/* WOOCOMMERCE GALLERY ENGINE DEPENDENCIES */}
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/zoom/jquery.zoom.min.js" strategy="afterInteractive" />
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/flexslider/jquery.flexslider.min.js" strategy="afterInteractive" />
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/photoswipe/photoswipe.min.js" strategy="afterInteractive" />
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/photoswipe/photoswipe-ui-default.min.js" strategy="afterInteractive" />
+      
+      {/* CORE SINGLE PRODUCT CONTROLLER */}
       <Script src="https://responserise.wpenginepowered.com/wp-content/plugins/woocommerce/assets/js/frontend/single-product.min.js" strategy="afterInteractive" />
-      <Script src="https://js.stripe.com/v3/" strategy="afterInteractive" onLoad={() => setIsStripeReady(true)} />
 
-      {/* RENDER SWITCH BOARD */}
+      {/* RENDER VIEW ROUTER */}
       {isMyAccountPage ? (
+        // ACCOUNT HUB
         <div className="woocommerce-account woocommerce page-template-default page container mx-auto px-4">
           {parsedHeader && <div className="elementor-rendered-html-header-wrapper" dangerouslySetInnerHTML={{ __html: parsedHeader }} />}
           
@@ -1093,6 +734,7 @@ export default function HeadlessDynamicRender({ pageData }) {
             
             {isLoggedIn ? (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                {/* Sidebar */}
                 <div className="md:col-span-1 flex flex-col items-center md:items-start space-y-6 border-r pr-6">
                   <div className="flex flex-col items-center space-y-2 w-full pb-4 border-b">
                     <div className="h-20 w-20 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 border shadow-inner text-3xl font-bold">
@@ -1110,6 +752,7 @@ export default function HeadlessDynamicRender({ pageData }) {
                   </nav>
                 </div>
 
+                {/* Account Details Tab Contents */}
                 <div className="md:col-span-3 min-h-[400px]">
                   {isLoadingStoreData ? (
                     <div className="flex items-center justify-center h-48 text-gray-400 animate-pulse text-sm">Retrieving profile...</div>
@@ -1260,6 +903,7 @@ export default function HeadlessDynamicRender({ pageData }) {
                 </div>
               </div>
             ) : (
+              // LOGIN/REGISTER PANEL
               <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white py-8 px-6 shadow sm:rounded-lg border border-gray-100">
                   <h2 className="text-xl font-bold text-gray-900 mb-6">Login</h2>
@@ -1301,91 +945,429 @@ export default function HeadlessDynamicRender({ pageData }) {
           {parsedFooter && <div className="elementor-rendered-html-footer-wrapper mt-12" dangerouslySetInnerHTML={{ __html: parsedFooter }} />}
         </div>
       ) : isCartPage ? (
-        <CartPageView
-          parsedHeader={parsedHeader}
-          parsedFooter={parsedFooter}
-          cartItems={cartItems}
-          cartSubtotal={cartSubtotal}
-          handleUpdateQty={handleUpdateQty}
-          handleRemoveItem={handleRemoveItem}
-          router={router}
-        />
+        // DYNAMIC HYBRID CART PAGE
+        <div className="woocommerce-cart-page-wrapper woocommerce">
+          {parsedHeader && <div className="elementor-rendered-html-header-wrapper" dangerouslySetInnerHTML={{ __html: parsedHeader }} />}
+
+          <div className="min-h-screen bg-white py-12 px-6 font-sans max-w-6xl mx-auto mt-6">
+            <h1 className="text-4xl font-extrabold text-gray-900 mb-8 border-b pb-4">Your Cart</h1>
+
+            {cartItems.length === 0 ? (
+              <div className="text-center py-16 border border-dashed rounded-lg bg-gray-50">
+                <i className="fas fa-shopping-cart text-5xl text-gray-300 mb-4 block"></i>
+                <h2 className="text-xl font-bold text-gray-700 mb-2">Your cart is currently empty.</h2>
+                <p className="text-sm text-gray-500 mb-6">Explore our training manual database to add products.</p>
+                <button onClick={() => router.push('/online-courses')} className="px-6 py-3 bg-orange-600 text-white rounded font-bold hover:bg-orange-700 transition shadow">
+                  Return to shop
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-4">
+                  {cartItems.map((item) => (
+                    <div key={item.id} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg shadow-sm bg-white gap-4">
+                      <div className="flex items-center space-x-4">
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className="w-16 h-16 object-cover rounded border" />
+                        ) : (
+                          <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-xs font-bold border">No Img</div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-gray-800 text-base">{item.name}</h3>
+                          <p className="text-sm text-orange-600 font-semibold">${parseFloat(item.price).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-6">
+                        <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                          <button onClick={() => handleUpdateQty(item.id, item.qty - 1)} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition text-gray-600 font-bold">-</button>
+                          <span className="px-4 py-1 text-sm font-semibold text-gray-800">{item.qty}</span>
+                          <button onClick={() => handleUpdateQty(item.id, item.qty + 1)} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition text-gray-600 font-bold">+</button>
+                        </div>
+                        <button onClick={() => handleRemoveItem(item.id)} className="text-red-500 hover:text-red-700 text-sm font-semibold transition flex items-center space-x-1">
+                          <i className="fas fa-trash"></i>
+                          <span className="hidden sm:inline">Remove</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="lg:col-span-1">
+                  <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-sm sticky top-6">
+                    <h2 className="text-xl font-bold text-gray-800 border-b pb-3 mb-4">Cart Totals</h2>
+                    <div className="space-y-3 text-sm text-gray-600 mb-6 pb-4 border-b">
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span className="font-semibold text-gray-800">${cartSubtotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Shipping</span>
+                        <span className="text-green-600 font-semibold">Free Delivery</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center text-base font-bold text-gray-800 mb-6">
+                      <span>Total</span>
+                      <span className="text-2xl text-orange-600">${cartSubtotal.toFixed(2)}</span>
+                    </div>
+                    <button onClick={() => router.push('/checkout')} className="w-full py-3 bg-orange-600 text-white rounded-md text-center font-bold text-sm shadow hover:bg-orange-700 transition">
+                      Proceed to Checkout
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {parsedFooter && <div className="elementor-rendered-html-footer-wrapper mt-12" dangerouslySetInnerHTML={{ __html: parsedFooter }} />}
+        </div>
       ) : isCheckoutPage ? (
-		<CheckoutPageView
-          parsedHeader={parsedHeader}
-          parsedFooter={parsedFooter}
-          orderSuccess={orderSuccess}
-          cartItems={cartItems}
-          orderError={orderError}
-          
-          // --- Explicitly passing all Billing State hooks ---
-          checkoutFirstName={checkoutFirstName} setCheckoutFirstName={setCheckoutFirstName}
-          checkoutLastName={checkoutLastName} setCheckoutLastName={setCheckoutLastName}
-          checkoutAddress={checkoutAddress} setCheckoutAddress={setCheckoutAddress}
-          checkoutCity={checkoutCity} setCheckoutCity={setCheckoutCity}
-          checkoutPostcode={checkoutPostcode} setCheckoutPostcode={setCheckoutPostcode}
-          checkoutEmail={checkoutEmail} setCheckoutEmail={setCheckoutEmail}
-          checkoutPhone={checkoutPhone} setCheckoutPhone={setCheckoutPhone}
-		  
-		  // 👇 ADD THE LIFTED BILLING COUNTRY/STATE PROPS 👇
-          billingCountry={billingCountry} setBillingCountry={setBillingCountry}
-          billingState={billingState} setBillingState={setBillingState}
+        // DYNAMIC HYBRID CHECKOUT PAGE
+        <div className="woocommerce-checkout-page-wrapper woocommerce">
+          {parsedHeader && <div className="elementor-rendered-html-header-wrapper" dangerouslySetInnerHTML={{ __html: parsedHeader }} />}
 
-          // --- Explicitly passing Shipping Toggle State hooks ---
-          shipToDifferentAddress={shipToDifferentAddress} setShipToDifferentAddress={setShipToDifferentAddress}
+          <div className="min-h-screen bg-white py-12 px-6 font-sans max-w-6xl mx-auto mt-6">
+            <h1 className="text-4xl font-extrabold text-gray-900 mb-8 border-b pb-4">Checkout</h1>
 
-          // --- Explicitly passing all Shipping State hooks ---
-          shippingFirstName={shippingFirstName} setShippingFirstName={setShippingFirstName}
-          shippingLastName={shippingLastName} setShippingLastName={setShippingLastName}
-          shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
-          shippingCity={shippingCity} setShippingCity={setShippingCity}
-          shippingPostcode={shippingPostcode} setShippingPostcode={setShippingPostcode}
+            {orderSuccess ? (
+              // ORDER SUCCESS CONFIRMATION LAYOUT
+              <div className="text-center py-16 border rounded-lg bg-green-50 max-w-2xl mx-auto border-green-200">
+                <i className="fas fa-check-circle text-6xl text-green-600 mb-4 block"></i>
+                <h2 className="text-2xl font-bold text-green-800 mb-2">Thank you! Your order is complete.</h2>
+                <p className="text-sm text-green-700 mb-6">Order reference key: <strong>#{orderSuccess.id}</strong></p>
+                <div className="max-w-md mx-auto text-left bg-white p-6 rounded-md shadow-sm border border-green-100 text-sm space-y-2 mb-8">
+                  <p><strong>Billed To:</strong> {orderSuccess.billing?.first_name} {orderSuccess.billing?.last_name}</p>
+                  <p><strong>Email:</strong> {orderSuccess.billing?.email}</p>
+                  <p><strong>Shipping To:</strong> {orderSuccess.shipping?.address_1}, {orderSuccess.shipping?.city}</p>
+                  <p><strong>Shipping Method Chosen:</strong> {orderSuccess.shipping_lines?.[0]?.method_title || 'Selected Method'}</p>
+                  <p><strong>Payment Method:</strong> {orderSuccess.payment_method_title}</p>
+                  {orderSuccess.coupon_lines?.length > 0 && (
+                    <p><strong>Coupons Applied:</strong> {orderSuccess.coupon_lines.map(c => c.code).join(', ')}</p>
+                  )}
+                  <p><strong>Order Total (inc. shipping & taxes):</strong> ${parseFloat(orderSuccess.total).toFixed(2)}</p>
+                </div>
+                <button onClick={() => router.push('/my-account')} className="px-6 py-3 bg-green-600 text-white rounded font-bold hover:bg-green-700 transition">
+                  Go to My Account
+                </button>
+              </div>
+            ) : cartItems.length === 0 ? (
+              <div className="text-center py-16 border border-dashed rounded-lg bg-gray-50">
+                <h2 className="text-lg font-bold text-gray-700 mb-4">No items present inside your cart for checkout processing.</h2>
+                <button onClick={() => router.push('/online-courses')} className="px-6 py-3 bg-orange-600 text-white rounded font-bold hover:bg-orange-700 transition">
+                  Browse Store
+                </button>
+              </div>
+            ) : (
+              // SECURE CHECKOUT FORM
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                {/* Billing and Shipping Input Panels */}
+                <div className="lg:col-span-2 space-y-8">
+                  
+                  {/* Billing Information */}
+                  <form onSubmit={handleCheckoutSubmit} id="checkout-form" className="space-y-6">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3">Billing details</h2>
+                    
+                    {orderError && (
+                      <div className="p-3 bg-red-50 text-red-600 text-sm font-semibold rounded border border-red-200">
+                        {orderError}
+                      </div>
+                    )}
 
-			// 👇 ADD THE LIFTED SHIPPING COUNTRY/STATE PROPS 👇
-          shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
-          shippingState={shippingState} setShippingState={setShippingState}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">First name *</label>
+                        <input type="text" required value={checkoutFirstName} onChange={(e) => setCheckoutFirstName(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Last name *</label>
+                        <input type="text" required value={checkoutLastName} onChange={(e) => setCheckoutLastName(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                    </div>
 
-			useSameAddress={useSameAddress}
-          setUseSameAddress={setUseSameAddress}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Street address *</label>
+                      <input type="text" required value={checkoutAddress} onChange={(e) => setCheckoutAddress(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                    </div>
 
-          // --- Explicitly passing Coupon state hooks ---
-          couponCode={couponCode} setCouponCode={setCouponCode}
-          couponError={couponError}
-          appliedCoupon={appliedCoupon}
-          isValidatingCoupon={isValidatingCoupon}
-          handleApplyCoupon={handleApplyCoupon}
-          handleRemoveCoupon={handleRemoveCoupon}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Town / City *</label>
+                        <input type="text" required value={checkoutCity} onChange={(e) => setCheckoutCity(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">ZIP / Postcode *</label>
+                        <input type="text" required value={checkoutPostcode} onChange={(e) => setCheckoutPostcode(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                    </div>
 
-          // --- Pricing totals ---
-          cartSubtotal={cartSubtotal}
-          discountAmount={discountAmount}
-          shippingMethods={shippingMethods}
-          selectedShippingMethod={selectedShippingMethod} setSelectedShippingMethod={setSelectedShippingMethod}
-          taxTotal={taxTotal}
-          orderTotalAmount={orderTotalAmount}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Email address *</label>
+                        <input type="email" required value={checkoutEmail} onChange={(e) => setCheckoutEmail(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone *</label>
+                        <input type="text" required value={checkoutPhone} onChange={(e) => setCheckoutPhone(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500 focus:border-orange-500" />
+                      </div>
+                    </div>
 
-          // --- Gateway & Process options ---
-          isLoadingGateways={isLoadingGateways}
-          paymentGateways={paymentGateways}
-          selectedPaymentGateway={selectedPaymentGateway} setSelectedPaymentGateway={setSelectedPaymentGateway}
-          stripeError={stripeError}
-          isProcessingOrder={isProcessingOrder}
-          handleCheckoutSubmit={handleCheckoutSubmit}
+                    {/* Toggle Different Shipping Address Option */}
+                    <div className="border-t pt-6">
+                      <label className="flex items-center space-x-3 cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={shipToDifferentAddress} 
+                          onChange={(e) => setShipToDifferentAddress(e.target.checked)} 
+                          className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500" 
+                        />
+                        <span className="text-lg font-bold text-gray-800">Ship to a different address?</span>
+                      </label>
+                    </div>
 
-          // --- Stripe bridge & Router ---
-          setStripeCardElement={setStripeCardElement}
-			stripeInstance={stripeInstance}        // 👈 PASS THIS
-          setStripeInstance={setStripeInstance}  // 👈 PASS THIS		  
-          router={router}
-        />
-		
+                    {/* Shipping Form Panel (Smooth toggle visibility block) */}
+                    {shipToDifferentAddress && (
+                      <div className="space-y-6 pt-4 border-l-4 border-orange-500 pl-4 bg-gray-50/50 p-4 rounded-r-md transition-all">
+                        <h3 className="text-xl font-bold text-gray-800">Shipping destination</h3>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">First name *</label>
+                            <input type="text" required={shipToDifferentAddress} value={shippingFirstName} onChange={(e) => setShippingFirstName(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Last name *</label>
+                            <input type="text" required={shipToDifferentAddress} value={shippingLastName} onChange={(e) => setShippingLastName(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Street address *</label>
+                          <input type="text" required={shipToDifferentAddress} value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500" />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Town / City *</label>
+                            <input type="text" required={shipToDifferentAddress} value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">ZIP / Postcode *</label>
+                            <input type="text" required={shipToDifferentAddress} value={shippingPostcode} onChange={(e) => setShippingPostcode(e.target.value)} className="block w-full px-3 py-2 border rounded-md shadow-sm sm:text-sm focus:ring-orange-500" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+                {/* Order Summary & Pricing Calculation Panel */}
+                <div className="lg:col-span-1 space-y-6">
+                  
+                  {/* Coupon Promo Block */}
+                  <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
+                    <h3 className="text-sm font-bold text-gray-800 uppercase mb-3">Have a coupon?</h3>
+                    <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Coupon code"
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value)}
+                        className="block w-full px-3 py-1.5 border rounded shadow-sm text-sm focus:ring-orange-500 focus:border-orange-500"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={isValidatingCoupon}
+                        className="px-4 py-1.5 bg-gray-800 hover:bg-gray-950 text-white rounded text-sm font-bold transition disabled:opacity-50"
+                      >
+                        Apply
+                      </button>
+                    </form>
+                    {couponError && (
+                      <p className="text-red-600 text-xs font-semibold mt-2">{couponError}</p>
+                    )}
+                    {appliedCoupon && (
+                      <div className="flex items-center justify-between bg-green-50 text-green-800 border border-green-200 p-2 rounded mt-3 text-xs font-semibold">
+                        <span>Code Applied: {appliedCoupon.code}</span>
+                        <button type="button" onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700 ml-1">
+                          <i className="fas fa-times-circle"></i> Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pricing calculations */}
+                  <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-sm sticky top-6">
+                    <h2 className="text-xl font-bold text-gray-800 border-b pb-3 mb-4">Your order</h2>
+                    
+                    {/* Item list */}
+                    <div className="space-y-3 mb-6">
+                      <div className="flex justify-between text-xs font-bold text-gray-400 uppercase">
+                        <span>Product</span>
+                        <span>Subtotal</span>
+                      </div>
+                      
+                      <div className="divide-y max-h-48 overflow-y-auto pr-1">
+                        {cartItems.map(item => (
+                          <div key={item.id} className="flex justify-between text-sm py-2 text-gray-600">
+                            <span className="truncate max-w-[180px]">{item.name} × {item.qty}</span>
+                            <span className="font-semibold">${(parseFloat(item.price) * item.qty).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dynamic shipping rate toggles */}
+                    <div className="border-t pt-4 mb-4">
+                      <p className="text-xs font-bold text-gray-400 uppercase mb-2">Shipping method</p>
+                      <div className="space-y-2">
+                        {shippingMethods.map((method) => (
+                          <label key={method.id} className="flex items-center justify-between p-2.5 border rounded-md bg-white cursor-pointer select-none text-sm hover:border-orange-500 transition">
+                            <span className="flex items-center space-x-2.5">
+                              <input 
+                                type="radio" 
+                                name="shipping_method" 
+                                checked={selectedShippingMethod.id === method.id} 
+                                onChange={() => setSelectedShippingMethod(method)} 
+                                className="text-orange-600 focus:ring-orange-500 h-4 w-4" 
+                              />
+                              <span className="font-medium text-gray-700">{method.title}</span>
+                            </span>
+                            <span className="font-bold text-gray-800">
+                              {method.cost === 0 ? 'Free' : `$${method.cost.toFixed(2)}`}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Calculated Totals */}
+                    <div className="space-y-3 text-sm text-gray-600 border-t pt-4 mb-6">
+                      <div className="flex justify-between">
+                        <span>Cart Subtotal</span>
+                        <span className="font-semibold text-gray-800">${cartSubtotal.toFixed(2)}</span>
+                      </div>
+                      {appliedCoupon && (
+                        <div className="flex justify-between text-green-600 font-semibold">
+                          <span>Coupon Discount ({appliedCoupon.code})</span>
+                          <span>-${discountAmount.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Shipping ({selectedShippingMethod.title})</span>
+                        <span className="font-semibold text-gray-800">${selectedShippingMethod.cost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Estimated Sales Tax</span>
+                        <span className="font-semibold text-gray-800">${taxTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-base font-bold text-gray-800 border-t pt-3">
+                        <span>Order Total</span>
+                        <span className="text-xl text-orange-600">${orderTotalAmount.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white border rounded-md mb-6 text-xs text-gray-500 space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <input type="radio" id="cod" name="payment" defaultChecked className="text-orange-600 focus:ring-orange-500" />
+                        <label htmlFor="cod" className="font-bold text-gray-700">Cash on Delivery</label>
+                      </div>
+                      <p>Pay with cash upon physical manual delivery or check-in verification.</p>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      form="checkout-form"
+                      disabled={isProcessingOrder} 
+                      className="w-full py-3 bg-orange-600 text-white rounded-md text-center font-bold text-sm shadow hover:bg-orange-700 transition disabled:opacity-50"
+                    >
+                      {isProcessingOrder ? 'Placing order...' : 'Place order'}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+
+          {parsedFooter && <div className="elementor-rendered-html-footer-wrapper mt-12" dangerouslySetInnerHTML={{ __html: parsedFooter }} />}
+        </div>
       ) : isProductPage ? (
-        <ProductPageView
-          cleanProductHtml={cleanProductHtml}
-          domReady={domReady}
-          productData={productData}
-        />
+        // DYNAMIC HYBRID PRODUCT PAGE
+        <div className="woocommerce-product-page-wrapper woocommerce single-product">
+          {/* 1. SCRAPED LAYOUT WITH EMBEDDED MOUNT ANCHOR */}
+          <div 
+            className="elementor-rendered-html-wrapper" 
+            dangerouslySetInnerHTML={{ __html: modifiedProductHtml }} 
+          />
+
+          {/* 2. INJECTED DYNAMIC REACT COMPONENT */}
+          {domReady && productData && (
+            <div className="react-portal-injector">
+              <div style={{ display: 'none' }} id="headless-mount-hook">
+                {document.getElementById('headless-react-add-to-cart-anchor') && (
+                  <div className="react-buy-box-container font-sans">
+                    
+                    {addedMessage && (
+                      <div className="woocommerce-message" role="alert" style={{ borderTopColor: '#ff6f00', background: '#f0fdf4', color: '#166534', padding: '12px', marginBottom: '16px', borderRadius: '4px', borderLeft: '4px solid #16a34a', fontWeight: '600', fontSize: '14px' }}>
+                        {addedMessage}
+                      </div>
+                    )}
+
+                    <div className="flex items-center space-x-3 mb-4">
+                      <span className="text-xs font-bold uppercase text-gray-400">Availability:</span>
+                      <span className={`text-xs font-bold uppercase px-2.5 py-0.5 rounded-full ${productData.stock_status === 'instock' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {productData.stock_status === 'instock' ? 'In Stock' : 'Out of Stock'}
+                      </span>
+                    </div>
+
+                    <form onSubmit={handleAddToCart} className="cart flex items-center gap-4">
+                      {/* Interactive Quantity block */}
+                      <div className="quantity-select">
+                        <button 
+                          type="button" 
+                          onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                          className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-r"
+                        >
+                          -
+                        </button>
+                        <span className="px-4 py-1.5 font-bold text-gray-800 text-sm">{quantity}</span>
+                        <button 
+                          type="button" 
+                          onClick={() => setQuantity(q => q + 1)}
+                          className="px-3 py-1.5 hover:bg-gray-100 transition text-gray-600 font-bold select-none border-l"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={addingToCart || productData.stock_status !== 'instock'}
+                        className="single_add_to_cart_button button alt flex-1 py-2 px-6 flex items-center justify-center text-sm disabled:opacity-50"
+                      >
+                        {addingToCart ? 'Adding unit...' : 'Add to cart'}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <Script id="hydrate-cart-box-helper" strategy="lazyOnload">
+            {`
+              const checkInterval = setInterval(() => {
+                const anchor = document.getElementById('headless-react-add-to-cart-anchor');
+                const mountHook = document.getElementById('headless-mount-hook');
+                if (anchor && mountHook) {
+                  anchor.appendChild(mountHook);
+                  mountHook.style.display = 'block';
+                  clearInterval(checkInterval);
+                }
+              }, 100);
+            `}
+          </Script>
+        </div>
       ) : (
+        // DEFAULT STATIC PAGE
         <div className="elementor-rendered-html-wrapper localized-static-viewport" dangerouslySetInnerHTML={{ __html: html }} />
       )}
     </Layout>
